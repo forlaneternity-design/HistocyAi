@@ -1,0 +1,6 @@
+{
+  "appId": "com.cytovision.research",
+  "appName": "Cytovision AI",
+  "webDir": "www",
+  "server": { "androidScheme": "https" }
+}
