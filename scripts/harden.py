@@ -198,6 +198,61 @@ if CV_OLD_H in s and CV_OLD_S in s and CV_OLD_B in s:
     s = s.replace(CV_OLD_H, CV_NEW_H, 1).replace(CV_OLD_S, CV_NEW_S, 1).replace(CV_OLD_B, CV_NEW_B, 1)
     print('three themes: Black / Blue (original) / Light')
 
+
+# ---- stage 8: idle auto-lock, clear network errors, auto-lock setting in More ----
+EXTRA2 = r"""<script>(function(){'use strict';
+function tok(){try{return typeof CN!=='undefined'&&CN.tok?CN.tok():'';}catch(x){return '';}}
+function idleMin(){try{var v=localStorage.getItem('cvIdleMin');return v===null?15:(parseInt(v,10)||0);}catch(x){return 15;}}
+var last=Date.now(),locked=false,ov=null;
+function touch(){if(!locked)last=Date.now();}
+['pointerdown','keydown','touchstart','scroll'].forEach(function(e){window.addEventListener(e,touch,{passive:true,capture:true});});
+function unlockUI(){locked=false;last=Date.now();if(ov&&ov.parentNode)ov.parentNode.removeChild(ov);ov=null;}
+function lock(){
+  if(locked||!tok())return;locked=true;
+  ov=document.createElement('div');ov.id='cvLock';ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');ov.setAttribute('aria-label','Session locked');
+  ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:99997;background:var(--bg,#000);color:var(--ink,#fff);display:flex;align-items:center;justify-content:center;padding:24px';
+  ov.innerHTML='<div style="max-width:360px;width:100%"><h2 style="margin:0 0 8px">Session locked</h2><p style="margin:0 0 12px">Enter your account password to continue.</p><label for="cvLockPw" style="display:block;margin-bottom:4px">Password</label><input id="cvLockPw" type="password" autocomplete="current-password" style="width:100%;min-height:44px;font-size:16px;box-sizing:border-box"><p id="cvLockMsg" role="alert" style="min-height:20px;margin:8px 0"></p><div style="display:flex;gap:8px"><button class="btn primary" id="cvLockGo" style="flex:1">Unlock</button><button class="btn" id="cvLockOut">Sign out</button></div></div>';
+  document.body.appendChild(ov);
+  var pw=document.getElementById('cvLockPw'),msg=document.getElementById('cvLockMsg'),go=document.getElementById('cvLockGo'),out=document.getElementById('cvLockOut');
+  pw.focus();
+  function say(t){msg.textContent=t;}
+  go.onclick=async function(){
+    say('');
+    try{await CN.api('/v1/unlock',{json:{password:pw.value}});unlockUI();}
+    catch(e){say(e.status===403?'Wrong password.':e.status===429?'Too many attempts. Wait a few minutes and try again.':e.message==='offline'?'No connection. Reconnect to unlock.':(e.message||'Could not unlock.'));pw.value='';pw.focus();}
+  };
+  pw.onkeydown=function(e){if(e.key==='Enter')go.onclick();};
+  out.onclick=async function(){try{await CN.api('/v1/logout',{method:'POST'});}catch(x){}if(typeof signOutLocal==='function')signOutLocal();unlockUI();try{if(typeof render==='function')render();}catch(x){}};
+  ov.addEventListener('keydown',function(e){if(e.key!=='Tab')return;var f=[pw,go,out],i=f.indexOf(document.activeElement);e.preventDefault();f[(i+(e.shiftKey?-1:1)+3)%3].focus();});
+}
+function check(){var m=idleMin();if(m>0&&tok()&&!locked&&Date.now()-last>m*60000)lock();}
+setInterval(check,15000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)check();});
+window.addEventListener('change',function(e){var t=e.target;if(t&&t.id==='cvIdle'){try{localStorage.setItem('cvIdleMin',t.value);}catch(x){}last=Date.now();}});
+new MutationObserver(function(){var s=document.getElementById('cvIdle');if(s&&!s.getAttribute('data-init')){s.setAttribute('data-init','1');var v=idleMin();s.value=String(v);if(s.value!==String(v))s.value='15';}}).observe(document.body,{childList:true,subtree:true});
+var banner=document.getElementById('cvOffline'),dflt=banner?banner.textContent:'';
+function say2(t){if(banner){banner.textContent=t;banner.hidden=false;}}
+function clearNet(){if(banner&&navigator.onLine!==false){banner.textContent=dflt;banner.hidden=true;}}
+function classify(e){
+  if(navigator.onLine===false){e.kind='device-offline';say2('Offline: this device has no connection. Work is kept on this device.');return;}
+  var host='';try{host=new URL(CN.url()).host;}catch(x){}
+  fetch(CN.url()+'/v1/health',{cache:'no-store'}).then(function(){e.kind='request-failed';say2('The server is reachable but that request failed. Try again.');})
+  .catch(function(){e.kind='server-down';say2('Cannot reach the server'+(host?' at '+host:'')+'. Check that it is running, the address is right, and the link uses HTTPS.');});
+}
+if(typeof api==='function'){var oa=api;api=async function(){try{var r=await oa.apply(this,arguments);clearNet();return r;}catch(e){if(e&&e.message==='offline')classify(e);throw e;}};if(typeof CN!=='undefined')CN.api=api;}
+})();</script>
+"""
+if 'cvIdleMin' not in s:
+    sc = list(re.finditer(SC, s))
+    s = s[:sc[-1].end()] + '\n' + EXTRA2 + s[sc[-1].end():]
+    IDLE_ANCHOR = '<p style="margin-top:12px;font-size:12px">Cytovision v5.0.3'
+    IDLE_NEW = ('<div style="margin-top:12px"><label for="cvIdle" style="display:block;margin-bottom:4px">Auto-lock after inactivity</label>'
+                '<select id="cvIdle"><option value="5">5 minutes</option><option value="15">15 minutes</option>'
+                '<option value="30">30 minutes</option><option value="0">Off</option></select></div>' + IDLE_ANCHOR)
+    if IDLE_ANCHOR in s and 'cvIdle"' not in s.split('id="cvIdle"')[0][-0:]:
+        s = s.replace(IDLE_ANCHOR, IDLE_NEW, 1)
+    print('idle auto-lock, network error messages and auto-lock setting added')
+
 if 'charset' not in s[:1024].lower():
     s = re.sub(r'(?i)<!doctype html>', '<!doctype html>\n<meta charset="utf-8">', s, count=1)
 mm = re.search(r'<meta[^>]*http-equiv=["\']Content-Security-Policy["\'][^>]*>', s, re.I)
